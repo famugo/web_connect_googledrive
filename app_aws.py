@@ -29,7 +29,7 @@ app.secret_key = 'a_very_strong_and_random_secret_key' # 在生产环境中，�
 CLIENT_SECRETS_FILE = 'client_secrets.json' 
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 # 警告：这里的回调URI需要在Google Cloud Console中更新
-REDIRECT_URI_PROD = 'http://naviall.ai:5000/callback'
+REDIRECT_URI_PROD = 'https://naviall.ai/callback'
 
 def credentials_to_dict(credentials):
     return {'token': credentials.token, 'refresh_token': credentials.refresh_token,
@@ -148,13 +148,12 @@ def login():
 @app.route('/callback')
 def callback():
     state = session.get('state')
-    # 使用生产环境的URI
     flow = Flow.from_client_secrets_file(
         CLIENT_SECRETS_FILE, scopes=SCOPES, redirect_uri=REDIRECT_URI_PROD)
-    # 这里的 request.url 必须是 HTTPS，这在生产环境中是必需的
-    # Google 不允许在生产中向 http:// 的回调URI发送令牌
-    # 我们将在Nginx中处理HTTPS
-    flow.fetch_token(authorization_response=request.url.replace('http://', 'https://'))
+    
+    # *** 修改这里：直接使用 request.url ***
+    flow.fetch_token(authorization_response=request.url)
+    
     credentials = flow.credentials
     session['credentials'] = credentials_to_dict(credentials)
     return redirect(url_for('drive_files'))
