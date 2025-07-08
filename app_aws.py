@@ -1,5 +1,6 @@
 import os
 from flask import Flask, redirect, request, session, url_for, render_template_string, jsonify
+from flask_cors import CORS  # 导入CORS扩展
 from google.oauth2.credentials import Credentials
 import httplib2
 from google.auth.transport.requests import AuthorizedSession
@@ -25,6 +26,12 @@ class Httplib2CompatibleAdapter:
 
 
 app = Flask(__name__)
+# 添加CORS支持，允许来自开发和生产环境的请求
+CORS(app, resources={
+    r"/drive-browser/*": {"origins": ["http://localhost:3000", "http://112.124.55.141:3000"], "supports_credentials": True},
+    r"/api/get_file_content/*": {"origins": ["http://localhost:3000", "http://112.124.55.141:3000"], "supports_credentials": True}
+})
+
 app.secret_key = 'a_very_strong_and_random_secret_key' # 在生产环境中，这应该更复杂
 CLIENT_SECRETS_FILE = 'client_secrets.json' 
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
@@ -220,3 +227,7 @@ def get_file_content(file_id):
 def logout():
     session.pop('credentials', None)
     return redirect(url_for('index'))
+
+if __name__ == '__main__':
+    # 在生产环境中，应该使用更安全的方式运行
+    app.run(host='0.0.0.0', port=5000)
