@@ -33,14 +33,27 @@ CORS(app, resources={
         "supports_credentials": True,
         "allow_headers": ["Content-Type"],
         "methods": ["GET", "POST", "OPTIONS"]
+    },
+    r"/callback": {
+        "origins": ["http://localhost:3000", "http://112.124.55.141:3000", "https://naviall.ai"],
+        "supports_credentials": True,
+        "allow_headers": ["Content-Type"],
+        "methods": ["GET", "POST", "OPTIONS"]
     }
 })
 
 app.secret_key = 'a_very_strong_and_random_secret_key'
 CLIENT_SECRETS_FILE = 'client_secrets.json' 
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
-# 这个回调 URI 必须与 Google Cloud Console 中配置的完全一致
+
+# 根据环境选择回调URI
+# 开发环境使用本地回调URL
+REDIRECT_URI_DEV = 'http://localhost:3000/callback'
+# 生产环境使用正式域名
 REDIRECT_URI_PROD = 'https://naviall.ai/callback'
+
+# 默认使用本地开发环境的回调URL
+REDIRECT_URI = REDIRECT_URI_DEV
 
 def credentials_to_dict(credentials):
     return {'token': credentials.token, 'refresh_token': credentials.refresh_token,
@@ -53,7 +66,7 @@ def credentials_to_dict(credentials):
 @app.route('/api/auth/google/url')
 def get_google_auth_url():
     flow = Flow.from_client_secrets_file(
-        CLIENT_SECRETS_FILE, scopes=SCOPES, redirect_uri=REDIRECT_URI_PROD)
+        CLIENT_SECRETS_FILE, scopes=SCOPES, redirect_uri=REDIRECT_URI)
     authorization_url, state = flow.authorization_url(
         access_type='offline', prompt='consent')
     session['state'] = state
@@ -66,7 +79,7 @@ def callback():
     # 验证 state (此处省略，但生产环境建议添加)
     
     flow = Flow.from_client_secrets_file(
-        CLIENT_SECRETS_FILE, scopes=SCOPES, redirect_uri=REDIRECT_URI_PROD)
+        CLIENT_SECRETS_FILE, scopes=SCOPES, redirect_uri=REDIRECT_URI)
     
     flow.fetch_token(authorization_response=request.url)
     
@@ -74,20 +87,138 @@ def callback():
     creds_dict = credentials_to_dict(credentials)
 
     # 返回一个HTML页面，用JS将凭证发送给打开此窗口的父页面
-    # !! 重要: 'http://112.124.55.141:3000' 必须是你的ChatApp的确切源
+    # 使用更安全的方式处理多个可能的来源
     html_response = f"""
     <!DOCTYPE html>
     <html>
-    <head><title>认证成功</title></head>
+    <head>
+        <title>认证成功</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; text-align: center; padding: 20px; }}
+            .status {{ margin: 20px 0; padding: 10px; border-radius: 5px; }}
+            .success {{ background-color: #d4edda; color: #155724; }}
+            .error {{ background-color: #f8d7da; color: #721c24; }}
+            pre {{ text-align: left; background: #f8f9fa; padding: 10px; border-radius: 5px; overflow: auto; }}
+        </style>
+    </head>
     <body>
+        <h2>Google Drive 授权成功</h2>
+        <div id="status" class="status success">正在处理凭证...</div>
+        <div id="debug"></div>
+        
         <script>
-            window.opener.postMessage({{
-                'type': 'google-auth-success',
-                'credentials': {creds_dict}
-            }}, 'http://112.124.55.141:3000');
-            window.close();
+            // 调试函数
+            function log(message, data) {{
+                console.log(message, data);
+                const debugDiv = document.getElementById('debug');
+                const logEntry = document.createElement('div');
+                logEntry.innerHTML = `<strong>${{message}}</strong>: ${{JSON.stringify(data, null, 2)}}`;
+                debugDiv.appendChild(logEntry);
+            }}
+            
+            function setStatus(message, isError = false) {{
+                const statusDiv = document.getElementById('status');
+                statusDiv.textContent = message;
+                statusDiv.className = `status ${{isError ? 'error' : 'success'}}`;
+            }}
+            
+            // 定义允许的来源列表
+            const allowedOrigins = [
+                'https://naviall.ai',
+                'http://112.124.55.141:3000',
+                'http://localhost:3000',
+                '*' // 在调试阶段允许所有来源，生产环境应移除
+            ];
+            
+            // 凭证对象
+            const credentials = {creds_dict};
+            log('获取到凭证', {{
+                hasToken: !!credentials.token,
+                hasRefreshToken: !!credentials.refresh_token,
+                scopes: credentials.scopes
+            }});
+            
+            // 检查window.opener是否存在
+            if (!window.opener) {{
+                setStatus('错误: 找不到父窗口，请手动关闭此窗口并返回应用', true);
+                log('错误', '找不到父窗口');
+                return;
+            }}
+            
+            // 尝试使用通配符发送消息（在调试阶段）
+            try {{
+                log('尝试使用通配符发送消息', '*');
+                window.opener.postMessage({{
+                    'type': 'google-auth-success',
+                    'credentials': credentials,
+                    'timestamp': new Date().toISOString()
+                }}, '*');
+                setStatus('凭证已发送！正在关闭窗口...');
+            }} catch (e) {{
+                log('使用通配符发送消息失败', e.toString());
+                setStatus('发送凭证失败，尝试其他方法...', true);
+            }}
+            
+            // 尝试获取父窗口来源并发送消息
+            try {{
+                const parentOrigin = window.opener.location.origin;
+                log('获取到父窗口来源', parentOrigin);
+                
+                window.opener.postMessage({{
+                    'type': 'google-auth-success',
+                    'credentials': credentials,
+                    'timestamp': new Date().toISOString()
+                }}, parentOrigin);
+                
+                setStatus('凭证已发送到父窗口！正在关闭...');
+            }} catch (e) {{
+                log('使用父窗口来源发送消息失败', e.toString());
+                
+                // 如果失败，尝试所有允许的来源
+                setStatus('尝试其他来源...', true);
+                
+                for (const origin of allowedOrigins) {{
+                    if (origin === '*') continue; // 已尝试过
+                    
+                    try {{
+                        log('尝试发送凭证到备用来源', origin);
+                        window.opener.postMessage({{
+                            'type': 'google-auth-success',
+                            'credentials': credentials,
+                            'timestamp': new Date().toISOString()
+                        }}, origin);
+                    }} catch (err) {{
+                        log(`向 ${{origin}} 发送消息失败`, err.toString());
+                    }}
+                }}
+            }}
+            
+            // 最后的备用方案：将凭证存储在localStorage
+            try {{
+                log('尝试将凭证存储在父窗口的localStorage', '开始');
+                
+                // 尝试直接在父窗口中设置localStorage
+                window.opener.localStorage.setItem('googleUserCredentials', JSON.stringify(credentials));
+                
+                log('凭证已存储在父窗口的localStorage', '成功');
+                setStatus('凭证已直接存储到父窗口！正在关闭...');
+            }} catch (e) {{
+                log('尝试存储凭证到父窗口localStorage失败', e.toString());
+                setStatus('无法直接存储凭证，请手动关闭窗口并返回应用', true);
+            }}
+            
+            // 延迟关闭窗口，给用户时间查看状态
+            setTimeout(() => {{
+                try {{
+                    window.close();
+                }} catch (e) {{
+                    log('关闭窗口失败', e.toString());
+                }}
+            }}, 3000);
         </script>
-        <p>认证成功，此窗口将自动关闭。</p>
+        
+        <p>认证成功，此窗口将在凭证发送后自动关闭。</p>
+        <p>如果窗口没有自动关闭，请手动关闭并返回应用。</p>
     </body>
     </html>
     """
