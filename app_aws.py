@@ -42,7 +42,7 @@ REDIRECT_URI_PROD = 'https://naviall.ai/callback'
 
 # --- 你的阿里云前端接收凭证的地址 ---
 # 这是认证成功后，用户浏览器被重定向的目标地址
-ALIYUN_FRONTEND_CALLBACK_URL = 'http://112.124.55.141:8000/google-callback-receiver'
+ALIYUN_FRONTEND_CALLBACK_URL = 'http://112.124.55.141:8000/gdrive/callback-receiver'
 
 
 # --- 认证流程 ---
