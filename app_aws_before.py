@@ -1,16 +1,14 @@
 import os
 from flask import Flask, redirect, request, session, url_for, render_template_string, jsonify
+from flask_cors import CORS  # 导入CORS扩展
 from google.oauth2.credentials import Credentials
 import httplib2
 from google.auth.transport.requests import AuthorizedSession
 from google_auth_oauthlib.flow import Flow
-
-# --- 这是修正后的正确导入语句 ---
 from googleapiclient.discovery import build
 from googleapiclient import errors
 
-
-# --- 最终成功的适配器 ---
+# --- 适配器保持不变，它已经完美工作 ---
 class Httplib2CompatibleAdapter:
     def __init__(self, authorized_session: AuthorizedSession):
         self.session = authorized_session
@@ -28,18 +26,29 @@ class Httplib2CompatibleAdapter:
 
 
 app = Flask(__name__)
-app.secret_key = 'your_super_secret_key_for_session' 
+# 添加CORS支持，允许来自开发和生产环境的请求
+CORS(app, resources={
+    r"/*": {
+        "origins": ["http://localhost:3000", "http://112.124.55.141:3000"], 
+        "supports_credentials": True,
+        "allow_headers": ["Content-Type", "Authorization", "Accept"],
+        "methods": ["GET", "POST", "OPTIONS"],
+        "expose_headers": ["Content-Type", "Authorization"]
+    }
+})
+
+app.secret_key = 'a_very_strong_and_random_secret_key' # 在生产环境中，这应该更复杂
 CLIENT_SECRETS_FILE = 'client_secrets.json' 
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
-REDIRECT_URI = 'http://127.0.0.1:5000/callback'
-PROXY_PORT = 7890
+# 警告：这里的回调URI需要在Google Cloud Console中更新
+REDIRECT_URI_PROD = 'https://naviall.ai/callback'
 
 def credentials_to_dict(credentials):
     return {'token': credentials.token, 'refresh_token': credentials.refresh_token,
             'token_uri': credentials.token_uri, 'client_id': credentials.client_id,
             'client_secret': credentials.client_secret, 'scopes': credentials.scopes}
 
-# --- 带有侧边栏和主内容区的全新HTML模板 ---
+# --- HTML模板保持不变 ---
 DRIVE_BROWSER_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -130,6 +139,8 @@ DRIVE_BROWSER_TEMPLATE = """
 </html>
 """
 
+# --- 修改授权流程以使用生产环境的回调URI ---
+# 注意：login 和 callback 函数中的 redirect_uri 都被修改了
 @app.route('/')
 def index():
     if 'credentials' in session:
@@ -138,8 +149,9 @@ def index():
 
 @app.route('/login')
 def login():
+    # 使用生产环境的URI
     flow = Flow.from_client_secrets_file(
-        CLIENT_SECRETS_FILE, scopes=SCOPES, redirect_uri=REDIRECT_URI)
+        CLIENT_SECRETS_FILE, scopes=SCOPES, redirect_uri=REDIRECT_URI_PROD)
     authorization_url, state = flow.authorization_url(
         access_type='offline', prompt='consent')
     session['state'] = state
@@ -149,8 +161,11 @@ def login():
 def callback():
     state = session.get('state')
     flow = Flow.from_client_secrets_file(
-        CLIENT_SECRETS_FILE, scopes=SCOPES, redirect_uri=REDIRECT_URI)
+        CLIENT_SECRETS_FILE, scopes=SCOPES, redirect_uri=REDIRECT_URI_PROD)
+    
+    # *** 修改这里：直接使用 request.url ***
     flow.fetch_token(authorization_response=request.url)
+    
     credentials = flow.credentials
     session['credentials'] = credentials_to_dict(credentials)
     return redirect(url_for('drive_files'))
@@ -158,13 +173,11 @@ def callback():
 @app.route('/drive-browser/', defaults={'folder_id': 'root'})
 @app.route('/drive-browser/<path:folder_id>')
 def drive_files(folder_id):
-    if 'credentials' not in session:
-        return redirect(url_for('login'))
-        
+    if 'credentials' not in session: return redirect(url_for('login'))
     creds = Credentials(**session['credentials'])
     try:
+        # *** 已移除代理设置 ***
         authed_session = AuthorizedSession(creds)
-        authed_session.proxies = { 'http': f'http://127.0.0.1:{PROXY_PORT}', 'https': f'http://127.0.0.1:{PROXY_PORT}' }
         http_adapter = Httplib2CompatibleAdapter(authorized_session=authed_session)
         drive_service = build('drive', 'v3', http=http_adapter)
         
@@ -183,7 +196,6 @@ def drive_files(folder_id):
             current_folder = folder_metadata
             if 'parents' in folder_metadata:
                 parent_id = folder_metadata['parents'][0]
-
         session['credentials'] = credentials_to_dict(http_adapter.credentials)
         return render_template_string(
             DRIVE_BROWSER_TEMPLATE, items=file_items,
@@ -193,35 +205,28 @@ def drive_files(folder_id):
 
 @app.route('/api/get_file_content/<path:file_id>')
 def get_file_content(file_id):
-    if 'credentials' not in session:
-        return jsonify({'error': 'Unauthorized'}), 401
-    
+    if 'credentials' not in session: return jsonify({'error': 'Unauthorized'}), 401
     creds = Credentials(**session['credentials'])
-    authed_session = AuthorizedSession(creds)
-    authed_session.proxies = { 'http': f'http://127.0.0.1:{PROXY_PORT}', 'https': f'http://127.0.0.1:{PROXY_PORT}' }
-    http_adapter = Httplib2CompatibleAdapter(authorized_session=authed_session)
-    drive_service = build('drive', 'v3', http=http_adapter)
-    
     try:
+        # *** 已移除代理设置 ***
+        authed_session = AuthorizedSession(creds)
+        http_adapter = Httplib2CompatibleAdapter(authorized_session=authed_session)
+        drive_service = build('drive', 'v3', http=http_adapter)
+        
         file_metadata = drive_service.files().get(fileId=file_id, fields='name, mimeType').execute()
         file_name = file_metadata.get('name')
         mime_type = file_metadata.get('mimeType')
         content = ""
         if 'google-apps' in mime_type:
-            content_bytes = drive_service.files().export_media(
-                fileId=file_id, mimeType='text/plain').execute()
+            content_bytes = drive_service.files().export_media(fileId=file_id, mimeType='text/plain').execute()
             content = content_bytes.decode('utf-8')
         else:
             content_bytes = drive_service.files().get_media(fileId=file_id).execute()
-            try:
-                content = content_bytes.decode('utf-8')
-            except UnicodeDecodeError:
-                content = "[这是一个二进制文件，无法显示内容]"
+            try: content = content_bytes.decode('utf-8')
+            except UnicodeDecodeError: content = "[这是一个二进制文件，无法显示内容]"
         return jsonify({'filename': file_name, 'content': content})
-    except errors.HttpError as error:
-        return jsonify({'error': f'API请求失败: {error}'}), 500
-    except Exception as e:
-        return jsonify({'error': f'未知错误: {str(e)}'}), 500
+    except errors.HttpError as error: return jsonify({'error': f'API请求失败: {error}'}), 500
+    except Exception as e: return jsonify({'error': f'未知错误: {str(e)}'}), 500
 
 @app.route('/logout')
 def logout():
@@ -229,5 +234,5 @@ def logout():
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
-    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
-    app.run(debug=True)
+    # 在生产环境中，应该使用更安全的方式运行
+    app.run(host='0.0.0.0', port=5000)
