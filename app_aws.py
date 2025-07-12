@@ -41,7 +41,9 @@ app.url_map.strict_slashes = False
 ALLOWED_ORIGINS = [
     "http://localhost:3000",       # 本地开发环境
     "http://112.124.55.141:3000",  # 云端测试环境
-    "https://naviall.ai"           # 生产环境
+    "https://naviall.ai",          # 旧生产环境
+    "http://naviall.com",          # 新生产环境 - HTTP
+    "https://naviall.com"          # 新生产环境 - HTTPS
 ]
 
 # 添加全局OPTIONS请求处理
@@ -93,7 +95,8 @@ REDIRECT_URI_OPTIONS = {
     'local_frontend': 'http://localhost:5000/callback',     # 本地后端端口（不是前端端口）
     'local_backend': 'http://localhost:5000/callback',      # 本地后端端口
     'cloud_test': 'http://112.124.55.141:5000/callback',    # 云端测试环境（使用后端端口）
-    'production': 'https://naviall.ai/callback'             # 生产环境
+    'production': 'https://naviall.ai/callback',            # 旧生产环境
+    'production_new': 'http://naviall.com/callback'         # 新生产环境
 }
 
 # 从环境变量或命令行参数获取环境设置
@@ -109,19 +112,23 @@ def get_environment():
     
     # 检查是否在AWS环境
     if os.environ.get('AWS_EXECUTION_ENV') or os.path.exists('/etc/ec2-environment'):
-        return 'production'
+        return 'production_new'  # 默认使用新的生产环境
     
     # 检查是否在Linux服务器上
     import socket
     hostname = socket.gethostname()
     if hostname.startswith('ip-') or hostname.startswith('ec2-'):
-        return 'production'
+        return 'production_new'  # 默认使用新的生产环境
     
     # 检查是否在Ubuntu系统上
     try:
         with open('/etc/os-release', 'r') as f:
             if 'Ubuntu' in f.read():
-                return 'production'
+                # 检查是否有特定环境标记文件
+                if os.path.exists('/etc/naviall_env_old'):
+                    return 'production'  # 使用旧的生产环境
+                else:
+                    return 'production_new'  # 默认使用新的生产环境
     except:
         pass
     
@@ -296,8 +303,11 @@ def callback():
                 }} else if (currentUrl.includes('112.124.55.141')) {{
                     // 云端测试环境
                     redirectUrl = 'http://112.124.55.141:3000/chat?googleAuth=success';
+                }} else if (currentUrl.includes('naviall.com')) {{
+                    // 新生产环境 - naviall.com
+                    redirectUrl = 'http://naviall.com/chat?googleAuth=success';
                 }} else {{
-                    // 生产环境
+                    // 旧生产环境 - naviall.ai
                     redirectUrl = 'https://naviall.ai/chat?googleAuth=success';
                 }}
                 
