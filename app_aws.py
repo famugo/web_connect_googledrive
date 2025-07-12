@@ -27,15 +27,22 @@ class Httplib2CompatibleAdapter:
 
 app = Flask(__name__)
 # CORS 设置至关重要，确保你的 ChatApp 源在允许列表中
+# 允许的前端源列表
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",       # 本地开发环境
+    "http://112.124.55.141:3000",  # 云端测试环境
+    "https://naviall.ai"           # 生产环境
+]
+
 CORS(app, resources={
     r"/api/*": {
-        "origins": ["http://localhost:3000", "http://112.124.55.141:3000"], 
+        "origins": ALLOWED_ORIGINS, 
         "supports_credentials": True,
         "allow_headers": ["Content-Type"],
         "methods": ["GET", "POST", "OPTIONS"]
     },
     r"/callback": {
-        "origins": ["http://localhost:3000", "http://112.124.55.141:3000", "https://naviall.ai"],
+        "origins": ALLOWED_ORIGINS,
         "supports_credentials": True,
         "allow_headers": ["Content-Type"],
         "methods": ["GET", "POST", "OPTIONS"]
@@ -46,14 +53,49 @@ app.secret_key = 'a_very_strong_and_random_secret_key'
 CLIENT_SECRETS_FILE = 'client_secrets.json' 
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
-# 根据环境选择回调URI
-# 开发环境使用本地回调URL
-REDIRECT_URI_DEV = 'http://localhost:3000/callback'
-# 生产环境使用正式域名
-REDIRECT_URI_PROD = 'https://naviall.ai/callback'
+# 注意: 回调URI必须与Google Cloud Console中配置的完全一致
+# Google OAuth不允许使用IP地址作为回调URL，必须使用有效的域名
 
-# 默认使用本地开发环境的回调URL
-REDIRECT_URI = REDIRECT_URI_DEV
+# 根据环境变量或命令行参数自动选择回调URI
+import os
+import sys
+
+# 默认使用本地开发环境
+DEFAULT_REDIRECT_URI = 'http://localhost:3000/callback'
+
+# 定义可用的回调URI选项
+REDIRECT_URI_OPTIONS = {
+    'local_frontend': 'http://localhost:5000/callback',     # 本地后端端口（不是前端端口）
+    'local_backend': 'http://localhost:5000/callback',      # 本地后端端口
+    'cloud_test': 'http://112.124.55.141:5000/callback',    # 云端测试环境（使用后端端口）
+    'production': 'https://naviall.ai/callback'             # 生产环境
+}
+
+# 从环境变量或命令行参数获取环境设置
+def get_environment():
+    # 检查命令行参数
+    if len(sys.argv) > 1 and sys.argv[1] in REDIRECT_URI_OPTIONS:
+        return sys.argv[1]
+    
+    # 检查环境变量
+    env = os.environ.get('GOOGLE_OAUTH_ENV')
+    if env and env in REDIRECT_URI_OPTIONS:
+        return env
+    
+    # 检查是否在AWS环境
+    if os.environ.get('AWS_EXECUTION_ENV'):
+        return 'production'
+    
+    # 默认使用本地开发环境
+    return 'local_frontend'
+
+# 设置当前环境的重定向URI
+CURRENT_ENV = get_environment()
+REDIRECT_URI = REDIRECT_URI_OPTIONS[CURRENT_ENV]
+print(f"[信息] 当前环境: {CURRENT_ENV}, 使用回调URI: {REDIRECT_URI}")
+
+# 注意：不能使用IP地址作为回调URL
+# 如果需要在测试服务器上运行，请为服务器配置域名
 
 def credentials_to_dict(credentials):
     return {'token': credentials.token, 'refresh_token': credentials.refresh_token,
@@ -127,7 +169,7 @@ def callback():
                 'https://naviall.ai',
                 'http://112.124.55.141:3000',
                 'http://localhost:3000',
-                '*' // 在调试阶段允许所有来源，生产环境应移除
+                '*' /* 在调试阶段允许所有来源，生产环境应移除 */
             ];
             
             // 凭证对象
