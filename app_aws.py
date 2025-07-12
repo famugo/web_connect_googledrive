@@ -104,7 +104,7 @@ REDIRECT_URI_OPTIONS = {
     'local_backend': 'http://localhost:5000/callback',      # 本地后端端口
     'cloud_test': 'http://112.124.55.141:5000/callback',    # 云端测试环境（使用后端端口）
     'production': 'https://naviall.ai/callback',            # 旧生产环境
-    'production_new': 'https://naviall.com/callback'        # 新生产环境（使用HTTPS）
+    'production_new': 'https://naviall.ai/callback'         # 新生产环境（使用AWS服务器作为回调）
 }
 
 # 从环境变量或命令行参数获取环境设置
