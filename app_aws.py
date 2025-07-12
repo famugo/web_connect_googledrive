@@ -73,6 +73,14 @@ CORS(app, resources={
         "supports_credentials": True,
         "allow_headers": ["Content-Type"],
         "methods": ["GET", "POST", "OPTIONS"]
+    },
+    # 明确为 /api/auth/google/url 添加 CORS 配置
+    r"/api/auth/google/url": {
+        "origins": ALLOWED_ORIGINS,
+        "supports_credentials": True,
+        "allow_headers": ["Content-Type", "Authorization", "Accept"],
+        "methods": ["GET", "OPTIONS"],
+        "max_age": 3600
     }
 })
 
@@ -96,7 +104,7 @@ REDIRECT_URI_OPTIONS = {
     'local_backend': 'http://localhost:5000/callback',      # 本地后端端口
     'cloud_test': 'http://112.124.55.141:5000/callback',    # 云端测试环境（使用后端端口）
     'production': 'https://naviall.ai/callback',            # 旧生产环境
-    'production_new': 'http://naviall.com/callback'         # 新生产环境
+    'production_new': 'https://naviall.com/callback'        # 新生产环境（使用HTTPS）
 }
 
 # 从环境变量或命令行参数获取环境设置
@@ -151,14 +159,39 @@ def credentials_to_dict(credentials):
 # --- 授权流程 API ---
 
 # 新增: 步骤1 - 前端调用此API获取Google授权URL
-@app.route('/api/auth/google/url')
+@app.route('/api/auth/google/url', methods=['GET', 'OPTIONS'])
 def get_google_auth_url():
+    # 处理 OPTIONS 请求
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        origin = request.headers.get('Origin')
+        if origin in ALLOWED_ORIGINS:
+            response.headers['Access-Control-Allow-Origin'] = origin
+        else:
+            response.headers['Access-Control-Allow-Origin'] = ALLOWED_ORIGINS[0]
+        response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept'
+        response.headers['Access-Control-Max-Age'] = '3600'
+        return response
+        
+    # 处理 GET 请求
     flow = Flow.from_client_secrets_file(
         CLIENT_SECRETS_FILE, scopes=SCOPES, redirect_uri=REDIRECT_URI)
     authorization_url, state = flow.authorization_url(
         access_type='offline', prompt='consent')
     session['state'] = state
-    return jsonify({'auth_url': authorization_url})
+    
+    response = jsonify({'auth_url': authorization_url})
+    
+    # 手动添加 CORS 头
+    origin = request.headers.get('Origin')
+    if origin in ALLOWED_ORIGINS:
+        response.headers['Access-Control-Allow-Origin'] = origin
+    else:
+        response.headers['Access-Control-Allow-Origin'] = ALLOWED_ORIGINS[0]
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    
+    return response
 
 # 修改: 步骤2 - Google回调此地址，此地址返回JS代码，通过postMessage将凭证发给父窗口
 @app.route('/callback')
@@ -304,10 +337,8 @@ def callback():
                     // 云端测试环境
                     redirectUrl = 'http://112.124.55.141:3000/chat?googleAuth=success';
                 }} else if (currentUrl.includes('naviall.com')) {{
-                    // 新生产环境 - naviall.com
-                    redirectUrl = 'http://naviall.com/chat?googleAuth=success';
+                    redirectUrl = 'https://naviall.com/chat?googleAuth=success';
                 }} else {{
-                    // 旧生产环境 - naviall.ai
                     redirectUrl = 'https://naviall.ai/chat?googleAuth=success';
                 }}
                 
