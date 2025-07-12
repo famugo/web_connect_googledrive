@@ -49,14 +49,21 @@ ALLOWED_ORIGINS = [
 # 添加全局OPTIONS请求处理
 @app.after_request
 def after_request(response):
-    if request.method == 'OPTIONS':
-        # 对于OPTIONS请求，总是返回200 OK
-        response.status_code = 200
-        # 设置CORS头部
-        response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+    # 获取请求的Origin
+    origin = request.headers.get('Origin', '')
+    
+    # 如果请求来自允许的源，添加CORS头部
+    if origin in ALLOWED_ORIGINS:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, Origin'
         response.headers['Access-Control-Max-Age'] = '3600'
+    
+    # 对于OPTIONS请求，总是返回200 OK
+    if request.method == 'OPTIONS':
+        response.status_code = 200
+    
     return response
 
 CORS(app, resources={
@@ -183,7 +190,13 @@ def get_google_auth_url():
     
     response = jsonify({'auth_url': authorization_url})
     
-    # 手动添加 CORS 头
+    # 手动添加 CORS 头，确保跨域请求能正确工作
+    # 记录请求信息以便调试
+    print(f"[DEBUG] 收到授权URL请求，来源: {request.headers.get('Origin', '未知')}, 返回URL: {authorization_url}")
+    print(f"[DEBUG] 当前环境: {CURRENT_ENV}, 使用回调URI: {REDIRECT_URI}")
+    print(f"[DEBUG] 请求头: {dict(request.headers)}")
+    
+    # 确保设置正确的CORS头部
     origin = request.headers.get('Origin')
     if origin in ALLOWED_ORIGINS:
         response.headers['Access-Control-Allow-Origin'] = origin
