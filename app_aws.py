@@ -194,83 +194,107 @@ def callback():
                 scopes: credentials.scopes
             }});
             
-            // 检查window.opener是否存在
-            if (!window.opener) {{
-                setStatus('错误: 找不到父窗口，请手动关闭此窗口并返回应用', true);
-                log('错误', '找不到父窗口');
-                return;
+            // 保存凭证到localStorage（当前窗口）
+            try {{
+                localStorage.setItem('googleUserCredentials', JSON.stringify(credentials));
+                log('凭证已保存到当前窗口的localStorage', '成功');
+            }} catch (e) {{
+                log('保存凭证到当前窗口localStorage失败', e.toString());
             }}
             
-            // 尝试使用通配符发送消息（在调试阶段）
-            try {{
-                log('尝试使用通配符发送消息', '*');
-                window.opener.postMessage({{
-                    'type': 'google-auth-success',
-                    'credentials': credentials,
-                    'timestamp': new Date().toISOString()
-                }}, '*');
-                setStatus('凭证已发送！正在关闭窗口...');
-            }} catch (e) {{
-                log('使用通配符发送消息失败', e.toString());
-                setStatus('发送凭证失败，尝试其他方法...', true);
-            }}
+            // 尝试多种方法发送凭证
+            let messageSent = false;
             
-            // 尝试获取父窗口来源并发送消息
-            try {{
-                const parentOrigin = window.opener.location.origin;
-                log('获取到父窗口来源', parentOrigin);
+            // 方法1: 检查window.opener并使用postMessage
+            if (window.opener) {{
+                // 尝试使用通配符发送消息
+                try {{
+                    log('尝试使用通配符发送消息', '*');
+                    window.opener.postMessage({{
+                        'type': 'google-auth-success',
+                        'credentials': credentials,
+                        'timestamp': new Date().toISOString()
+                    }}, '*');
+                    messageSent = true;
+                    setStatus('凭证已发送！正在关闭窗口...');
+                }} catch (e) {{
+                    log('使用通配符发送消息失败', e.toString());
+                }}
                 
-                window.opener.postMessage({{
-                    'type': 'google-auth-success',
-                    'credentials': credentials,
-                    'timestamp': new Date().toISOString()
-                }}, parentOrigin);
-                
-                setStatus('凭证已发送到父窗口！正在关闭...');
-            }} catch (e) {{
-                log('使用父窗口来源发送消息失败', e.toString());
-                
-                // 如果失败，尝试所有允许的来源
-                setStatus('尝试其他来源...', true);
-                
-                for (const origin of allowedOrigins) {{
-                    if (origin === '*') continue; // 已尝试过
-                    
-                    try {{
-                        log('尝试发送凭证到备用来源', origin);
-                        window.opener.postMessage({{
-                            'type': 'google-auth-success',
-                            'credentials': credentials,
-                            'timestamp': new Date().toISOString()
-                        }}, origin);
-                    }} catch (err) {{
-                        log(`向 ${{origin}} 发送消息失败`, err.toString());
+                // 尝试使用特定来源发送消息
+                if (!messageSent) {{
+                    for (const origin of allowedOrigins) {{
+                        if (origin === '*') continue; // 已尝试过
+                        
+                        try {{
+                            log('尝试发送凭证到来源', origin);
+                            window.opener.postMessage({{
+                                'type': 'google-auth-success',
+                                'credentials': credentials,
+                                'timestamp': new Date().toISOString()
+                            }}, origin);
+                            messageSent = true;
+                        }} catch (err) {{
+                            log(`向 ${{origin}} 发送消息失败`, err.toString());
+                        }}
                     }}
                 }}
-            }}
-            
-            // 最后的备用方案：将凭证存储在localStorage
-            try {{
-                log('尝试将凭证存储在父窗口的localStorage', '开始');
                 
                 // 尝试直接在父窗口中设置localStorage
-                window.opener.localStorage.setItem('googleUserCredentials', JSON.stringify(credentials));
-                
-                log('凭证已存储在父窗口的localStorage', '成功');
-                setStatus('凭证已直接存储到父窗口！正在关闭...');
-            }} catch (e) {{
-                log('尝试存储凭证到父窗口localStorage失败', e.toString());
-                setStatus('无法直接存储凭证，请手动关闭窗口并返回应用', true);
+                if (!messageSent) {{
+                    try {{
+                        log('尝试将凭证存储在父窗口的localStorage', '开始');
+                        window.opener.localStorage.setItem('googleUserCredentials', JSON.stringify(credentials));
+                        log('凭证已存储在父窗口的localStorage', '成功');
+                        messageSent = true;
+                        setStatus('凭证已直接存储到父窗口！正在关闭...');
+                    }} catch (e) {{
+                        log('尝试存储凭证到父窗口localStorage失败', e.toString());
+                    }}
+                }}
+            }} else {{
+                log('错误', '找不到父窗口');
             }}
             
-            // 延迟关闭窗口，给用户时间查看状态
-            setTimeout(() => {{
-                try {{
-                    window.close();
-                }} catch (e) {{
-                    log('关闭窗口失败', e.toString());
+            // 方法2: 使用重定向作为备选方案
+            if (!messageSent) {{
+                // 如果所有方法都失败，尝试重定向回前端应用
+                setStatus('尝试重定向回应用...');
+                
+                // 确定重定向URL
+                let redirectUrl;
+                const currentUrl = window.location.href;
+                
+                if (currentUrl.includes('localhost')) {{
+                    // 本地开发环境
+                    redirectUrl = 'http://localhost:3000/chat?googleAuth=success';
+                }} else if (currentUrl.includes('112.124.55.141')) {{
+                    // 云端测试环境
+                    redirectUrl = 'http://112.124.55.141:3000/chat?googleAuth=success';
+                }} else {{
+                    // 生产环境
+                    redirectUrl = 'https://naviall.ai/chat?googleAuth=success';
                 }}
-            }}, 3000);
+                
+                log('即将重定向到', redirectUrl);
+                
+                // 添加凭证作为URL参数（仅用于调试，实际应用中应避免在URL中传递敏感信息）
+                // redirectUrl += '&credentials=' + encodeURIComponent(JSON.stringify(credentials));
+                
+                // 3秒后重定向
+                setTimeout(() => {{
+                    window.location.href = redirectUrl;
+                }}, 3000);
+            }} else {{
+                // 如果消息已发送，尝试关闭窗口
+                setTimeout(() => {{
+                    try {{
+                        window.close();
+                    }} catch (e) {{
+                        log('关闭窗口失败', e.toString());
+                    }}
+                }}, 3000);
+            }}
         </script>
         
         <p>认证成功，此窗口将在凭证发送后自动关闭。</p>
