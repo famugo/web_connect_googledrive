@@ -1,12 +1,19 @@
+import sys
 import os
-from flask import Flask, redirect, request, session, url_for, jsonify
+import json
+import socket
+import platform
+from flask import Flask, request, redirect, jsonify, session
 from flask_cors import CORS
 from google.oauth2.credentials import Credentials
-import httplib2
-from google.auth.transport.requests import AuthorizedSession
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
-from googleapiclient import errors
+from google.auth.transport.requests import AuthorizedSession
+import httplib2
+
+# 在本地开发环境中允许OAuth使用HTTP
+# 注意：这只应在开发环境中设置，生产环境应使用HTTPS
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 # --- 适配器保持不变 ---
 class Httplib2CompatibleAdapter:
@@ -26,6 +33,9 @@ class Httplib2CompatibleAdapter:
 
 
 app = Flask(__name__)
+# 禁用URL尾部斜杠重定向，避免OPTIONS请求被重定向
+app.url_map.strict_slashes = False
+
 # CORS 设置至关重要，确保你的 ChatApp 源在允许列表中
 # 允许的前端源列表
 ALLOWED_ORIGINS = [
@@ -34,12 +44,27 @@ ALLOWED_ORIGINS = [
     "https://naviall.ai"           # 生产环境
 ]
 
+# 添加全局OPTIONS请求处理
+@app.after_request
+def after_request(response):
+    if request.method == 'OPTIONS':
+        # 对于OPTIONS请求，总是返回200 OK
+        response.status_code = 200
+        # 设置CORS头部
+        response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept'
+        response.headers['Access-Control-Max-Age'] = '3600'
+    return response
+
 CORS(app, resources={
     r"/api/*": {
         "origins": ALLOWED_ORIGINS, 
         "supports_credentials": True,
-        "allow_headers": ["Content-Type"],
-        "methods": ["GET", "POST", "OPTIONS"]
+        "allow_headers": ["Content-Type", "Authorization", "Accept"],
+        "methods": ["GET", "POST", "OPTIONS"],
+        "expose_headers": ["Content-Type", "Authorization", "Access-Control-Allow-Origin"],
+        "max_age": 3600
     },
     r"/callback": {
         "origins": ALLOWED_ORIGINS,
@@ -305,6 +330,21 @@ def callback():
     return html_response
 
 # --- 数据 API ---
+
+# 增加OPTIONS方法处理，确保预检请求能正确响应
+@app.route('/api/drive/files/', defaults={'folder_id': 'root'}, methods=['OPTIONS'])
+@app.route('/api/drive/files/<path:folder_id>', methods=['OPTIONS'])
+def api_drive_files_options(folder_id):
+    response = jsonify({
+        'status': 'success',
+        'message': 'CORS preflight request successful'
+    })
+    # 手动设置CORS头部
+    response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
+    response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept')
+    response.headers.add('Access-Control-Max-Age', '3600')
+    return response
 
 # 新增: API端点，用于获取文件和文件夹列表
 # 它通过POST请求体接收凭证，而不是从session中读取
