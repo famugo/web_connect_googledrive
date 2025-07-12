@@ -34,17 +34,22 @@ ALLOWED_ORIGINS = [
     "https://naviall.ai"           # 生产环境
 ]
 
+# 增强CORS配置，允许预检请求和重定向
 CORS(app, resources={
     r"/api/*": {
         "origins": ALLOWED_ORIGINS, 
         "supports_credentials": True,
-        "allow_headers": ["Content-Type"],
-        "methods": ["GET", "POST", "OPTIONS"]
+        "allow_headers": ["Content-Type", "Authorization"],
+        "methods": ["GET", "POST", "OPTIONS"],
+        "expose_headers": ["Content-Type", "Authorization"],
+        "max_age": 3600
     },
     r"/callback": {
         "origins": ALLOWED_ORIGINS,
         "supports_credentials": True,
-        "allow_headers": ["Content-Type"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "expose_headers": ["Content-Type", "Authorization"],
+        "max_age": 3600,
         "methods": ["GET", "POST", "OPTIONS"]
     }
 })
