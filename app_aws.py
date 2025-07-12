@@ -83,8 +83,22 @@ def get_environment():
         return env
     
     # 检查是否在AWS环境
-    if os.environ.get('AWS_EXECUTION_ENV'):
+    if os.environ.get('AWS_EXECUTION_ENV') or os.path.exists('/etc/ec2-environment'):
         return 'production'
+    
+    # 检查是否在Linux服务器上
+    import socket
+    hostname = socket.gethostname()
+    if hostname.startswith('ip-') or hostname.startswith('ec2-'):
+        return 'production'
+    
+    # 检查是否在Ubuntu系统上
+    try:
+        with open('/etc/os-release', 'r') as f:
+            if 'Ubuntu' in f.read():
+                return 'production'
+    except:
+        pass
     
     # 默认使用本地开发环境
     return 'local_frontend'
