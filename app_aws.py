@@ -401,10 +401,14 @@ def api_drive_files_options(folder_id):
     return response
 
 # 新增: API端点，用于获取文件和文件夹列表
-# 它通过POST请求体接收凭证，而不是从session中读取
+# 它通过POST请求体接收凭证，而不是从ession中读取
 @app.route('/api/drive/files/', defaults={'folder_id': 'root'}, methods=['POST'])
 @app.route('/api/drive/files/<path:folder_id>', methods=['POST'])
 def api_drive_files(folder_id):
+    # 记录请求信息以便调试
+    print(f"[DEBUG] 收到文件列表请求，来源: {request.headers.get('Origin', '未知')}, 文件夹ID: {folder_id}")
+    print(f"[DEBUG] 请求头: {dict(request.headers)}")
+    
     creds_data = request.json.get('credentials')
     if not creds_data:
         return jsonify({'error': 'Credentials not provided'}), 401
@@ -423,16 +427,60 @@ def api_drive_files(folder_id):
                        'is_folder': item['mimeType'] == 'application/vnd.google-apps.folder'}
                       for item in results.get('files', [])]
         
-        return jsonify({'files': file_items})
+        response = jsonify({'files': file_items})
+        
+        # 手动添加 CORS 头部，确保跨域请求能正确工作
+        origin = request.headers.get('Origin')
+        if origin in ALLOWED_ORIGINS:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+        
+        return response
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"[ERROR] 获取文件列表失败: {str(e)}")
+        error_response = jsonify({'error': str(e)})
+        
+        # 即使发生错误也要添加 CORS 头部
+        origin = request.headers.get('Origin')
+        if origin in ALLOWED_ORIGINS:
+            error_response.headers['Access-Control-Allow-Origin'] = origin
+            error_response.headers['Access-Control-Allow-Credentials'] = 'true'
+        
+        return error_response, 500
+
+# 增加OPTIONS方法处理，确保预检请求能正确响应
+@app.route('/api/get_file_content/<path:file_id>', methods=['OPTIONS'])
+def api_get_file_content_options(file_id):
+    response = jsonify({
+        'status': 'success',
+        'message': 'CORS preflight request successful'
+    })
+    # 手动设置CORS头部
+    origin = request.headers.get('Origin', '')
+    if origin in ALLOWED_ORIGINS:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, Origin'
+        response.headers['Access-Control-Max-Age'] = '3600'
+    return response
 
 # 修改: get_file_content 转为纯API, 通过POST接收凭证
 @app.route('/api/get_file_content/<path:file_id>', methods=['POST'])
 def api_get_file_content(file_id):
+    # 记录请求信息以便调试
+    print(f"[DEBUG] 收到文件内容请求，来源: {request.headers.get('Origin', '未知')}, 文件ID: {file_id}")
+    print(f"[DEBUG] 请求头: {dict(request.headers)}")
+    
     creds_data = request.json.get('credentials')
     if not creds_data:
-        return jsonify({'error': 'Unauthorized'}), 401
+        error_response = jsonify({'error': 'Unauthorized'})
+        # 即使发生错误也要添加 CORS 头部
+        origin = request.headers.get('Origin')
+        if origin in ALLOWED_ORIGINS:
+            error_response.headers['Access-Control-Allow-Origin'] = origin
+            error_response.headers['Access-Control-Allow-Credentials'] = 'true'
+        return error_response, 401
 
     try:
         creds = Credentials(**creds_data)
@@ -455,11 +503,33 @@ def api_get_file_content(file_id):
             except UnicodeDecodeError:
                 content = "[这是一个二进制文件，无法显示内容]"
         
-        return jsonify({'filename': file_name, 'content': content})
+        response = jsonify({'filename': file_name, 'content': content})
+        
+        # 手动添加 CORS 头部，确保跨域请求能正确工作
+        origin = request.headers.get('Origin')
+        if origin in ALLOWED_ORIGINS:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+        
+        return response
     except errors.HttpError as error:
-        return jsonify({'error': f'API请求失败: {error}'}), 500
+        print(f"[ERROR] 获取文件内容失败 (API错误): {error}")
+        error_response = jsonify({'error': f'API请求失败: {error}'})
+        # 即使发生错误也要添加 CORS 头部
+        origin = request.headers.get('Origin')
+        if origin in ALLOWED_ORIGINS:
+            error_response.headers['Access-Control-Allow-Origin'] = origin
+            error_response.headers['Access-Control-Allow-Credentials'] = 'true'
+        return error_response, 500
     except Exception as e:
-        return jsonify({'error': f'未知错误: {str(e)}'}), 500
+        print(f"[ERROR] 获取文件内容失败 (未知错误): {str(e)}")
+        error_response = jsonify({'error': f'未知错误: {str(e)}'})
+        # 即使发生错误也要添加 CORS 头部
+        origin = request.headers.get('Origin')
+        if origin in ALLOWED_ORIGINS:
+            error_response.headers['Access-Control-Allow-Origin'] = origin
+            error_response.headers['Access-Control-Allow-Credentials'] = 'true'
+        return error_response, 500
 
 
 if __name__ == '__main__':
