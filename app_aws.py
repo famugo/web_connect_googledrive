@@ -431,6 +431,34 @@ def api_drive_files(folder_id):
         http_adapter = Httplib2CompatibleAdapter(authorized_session=authed_session)
         drive_service = build('drive', 'v3', http=http_adapter)
         
+        # 获取当前文件夹的名称
+        folder_name = None
+        if folder_id == 'root':
+            # 如果是根目录，直接设置为'My Drive'
+            folder_name = 'My Drive'
+            print(f"[DEBUG] 根目录，设置文件夹名称为: {folder_name}")
+        else:
+            try:
+                # 使用Google Drive API获取文件夹信息
+                print(f"[DEBUG] 尝试获取文件夹ID={folder_id}的名称")
+                folder_info = drive_service.files().get(fileId=folder_id, fields="name").execute()
+                folder_name = folder_info.get('name')
+                print(f"[DEBUG] 成功获取到文件夹名称: {folder_name}")
+            except Exception as e:
+                print(f"[ERROR] 获取文件夹名称失败: {str(e)}")
+                # 尝试从父文件夹中查找当前文件夹
+                try:
+                    print(f"[DEBUG] 尝试从文件列表中查找文件夹名称")
+                    # 先获取文件列表，然后再尝试查找当前文件夹
+                    query = f"'{folder_id}' in parents and trashed = false"
+                    results = drive_service.files().list(q=query, pageSize=1, fields="files(id, name, mimeType)").execute()
+                    # 如果没有找到，则使用默认值
+                    folder_name = folder_name or '文件夹'
+                except Exception as inner_e:
+                    print(f"[ERROR] 从文件列表中查找文件夹名称失败: {str(inner_e)}")
+                    folder_name = '文件夹'  # 默认值
+        
+        # 获取文件夹内的文件列表
         query = f"'{folder_id}' in parents and trashed = false"
         results = drive_service.files().list(
             q=query, pageSize=200, fields="files(id, name, mimeType)").execute()
@@ -439,7 +467,22 @@ def api_drive_files(folder_id):
                        'is_folder': item['mimeType'] == 'application/vnd.google-apps.folder'}
                       for item in results.get('files', [])]
         
-        response = jsonify({'files': file_items})
+        # 添加folder_name到响应中
+        response_data = {
+            'files': file_items
+        }
+        
+        # 如果有文件夹名称，添加到响应中
+        if folder_name:
+            response_data['folder_name'] = folder_name
+            print(f"[DEBUG] 添加文件夹名称到响应: {folder_name}")
+        else:
+            print(f"[DEBUG] 没有文件夹名称可添加到响应")
+        
+        # 打印完整的响应数据以便调试
+        print(f"[DEBUG] 响应数据: {json.dumps(response_data, ensure_ascii=False)}")
+            
+        response = jsonify(response_data)
         
         # 手动添加 CORS 头部，确保跨域请求能正确工作
         origin = request.headers.get('Origin')
