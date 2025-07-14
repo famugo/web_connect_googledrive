@@ -42,7 +42,7 @@ ALLOWED_ORIGINS = [
     "http://localhost:3000",       # 本地开发环境
     "http://112.124.55.141:3000",  # 云端测试环境
     "https://naviall.ai",          # 旧生产环境
-    "http://naviall.com",          # 新生产环境 - HTTP
+    # "http://naviall.com",          # 新生产环境 - HTTP
     "https://naviall.com"          # 新生产环境 - HTTPS
 ]
 
@@ -54,6 +54,7 @@ def after_request(response):
     
     # 如果请求来自允许的源，添加CORS头部
     if origin in ALLOWED_ORIGINS:
+        # 严格匹配源，只允许列表中的源
         response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Credentials'] = 'true'
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
@@ -63,14 +64,18 @@ def after_request(response):
     # 对于OPTIONS请求，总是返回200 OK
     if request.method == 'OPTIONS':
         response.status_code = 200
+        
+    # 调试信息
+    print(f"[CORS DEBUG] 请求源: {origin}, 响应头: {dict(response.headers)}")
     
     return response
 
+# 使用更安全的CORS配置
 CORS(app, resources={
     r"/api/*": {
-        "origins": ALLOWED_ORIGINS, 
+        "origins": ALLOWED_ORIGINS,
         "supports_credentials": True,
-        "allow_headers": ["Content-Type", "Authorization", "Accept"],
+        "allow_headers": ["Content-Type", "Authorization", "Accept", "Origin"],
         "methods": ["GET", "POST", "OPTIONS"],
         "expose_headers": ["Content-Type", "Authorization", "Access-Control-Allow-Origin"],
         "max_age": 3600
@@ -85,7 +90,7 @@ CORS(app, resources={
     r"/api/auth/google/url": {
         "origins": ALLOWED_ORIGINS,
         "supports_credentials": True,
-        "allow_headers": ["Content-Type", "Authorization", "Accept"],
+        "allow_headers": ["Content-Type", "Authorization", "Accept", "Origin"],
         "methods": ["GET", "OPTIONS"],
         "max_age": 3600
     }
@@ -394,10 +399,17 @@ def api_drive_files_options(folder_id):
         'message': 'CORS preflight request successful'
     })
     # 手动设置CORS头部
-    response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
-    response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept')
-    response.headers.add('Access-Control-Max-Age', '3600')
+    origin = request.headers.get('Origin', '')
+    if origin in ALLOWED_ORIGINS:
+        response.headers.add('Access-Control-Allow-Origin', origin)
+        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Origin')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        response.headers.add('Access-Control-Max-Age', '3600')
+    
+    # 调试信息
+    print(f"[OPTIONS DEBUG] 收到预检请求，源: {origin}, 路径: /api/drive/files/{folder_id}")
+    
     return response
 
 # 新增: API端点，用于获取文件和文件夹列表
