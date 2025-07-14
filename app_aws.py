@@ -36,6 +36,62 @@ app = Flask(__name__)
 # 禁用URL尾部斜杠重定向，避免OPTIONS请求被重定向
 app.url_map.strict_slashes = False
 
+# 添加根路径处理，显示欢迎页面
+@app.route('/')
+def index():
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>NaviAI Google Drive API</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                margin: 40px;
+                line-height: 1.6;
+                background-color: #f5f5f5;
+            }
+            .container {
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 20px;
+                border: 1px solid #ddd;
+                border-radius: 5px;
+                background-color: white;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            h1 {
+                color: #2c3e50;
+                border-bottom: 1px solid #eee;
+                padding-bottom: 10px;
+            }
+            .status {
+                display: inline-block;
+                padding: 5px 10px;
+                background-color: #27ae60;
+                color: white;
+                border-radius: 3px;
+                font-weight: bold;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>NaviAI Google Drive API Server</h1>
+            <p>This server provides Google Drive API integration services for NaviAI applications.</p>
+            <p>Service Status: <span class="status">Running</span></p>
+            <p>This server handles the following API endpoints:</p>
+            <ul>
+                <li><code>/api/auth/google/url</code> - Get Google OAuth authorization URL</li>
+                <li><code>/api/drive/files</code> - Get Google Drive file list</li>
+                <li><code>/api/drive/file</code> - Get specific file content</li>
+                <li><code>/callback</code> - OAuth callback handler</li>
+            </ul>
+        </div>
+    </body>
+    </html>
+    """
+
 # CORS 设置至关重要，确保你的 ChatApp 源在允许列表中
 # 允许的前端源列表
 ALLOWED_ORIGINS = [
