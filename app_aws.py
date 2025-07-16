@@ -104,7 +104,7 @@ ALLOWED_ORIGINS = [
 ]
 
 # 配置Flask应用，增加最大内容长度限制（默认为16MB）
-app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 设置为20MB
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 设置为50MB
 
 # 添加全局OPTIONS请求处理
 @app.after_request
