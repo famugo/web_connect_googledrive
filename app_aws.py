@@ -98,9 +98,13 @@ ALLOWED_ORIGINS = [
     "http://localhost:3000",       # 本地开发环境
     "http://112.124.55.141:3000",  # 云端测试环境
     "https://naviall.ai",          # 旧生产环境
-    # "http://naviall.com",          # 新生产环境 - HTTP
-    "https://naviall.com"          # 新生产环境 - HTTPS
+    "http://naviall.com",          # 新生产环境 - HTTP
+    "https://naviall.com",         # 新生产环境 - HTTPS
+    # "https://www.naviall.com"      # 带www的新生产环境
 ]
+
+# 配置Flask应用，增加最大内容长度限制（默认为16MB）
+app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 设置为20MB
 
 # 添加全局OPTIONS请求处理
 @app.after_request
@@ -113,8 +117,8 @@ def after_request(response):
         # 严格匹配源，只允许列表中的源
         response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, Origin'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, Origin, X-Requested-With'
         response.headers['Access-Control-Max-Age'] = '3600'
     
     # 对于OPTIONS请求，总是返回200 OK
@@ -642,6 +646,79 @@ def api_get_file_content(file_id):
             error_response.headers['Access-Control-Allow-Credentials'] = 'true'
         return error_response, 500
 
+# 添加文件上传API的OPTIONS请求处理
+@app.route('/api/upload/file', methods=['OPTIONS'])
+def upload_file_options():
+    print(f"[DEBUG] 收到文件上传OPTIONS请求，来源: {request.headers.get('Origin', '未知')}")
+    response = jsonify({
+        'status': 'success',
+        'message': 'CORS preflight request successful for file upload'
+    })
+    # 手动设置CORS头部
+    origin = request.headers.get('Origin', '')
+    if origin in ALLOWED_ORIGINS:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, Origin, X-Requested-With'
+        response.headers['Access-Control-Max-Age'] = '3600'
+    return response
+
+# 添加文件上传API路由
+@app.route('/api/upload/file', methods=['POST'])
+def upload_file():
+    print(f"[DEBUG] 收到文件上传请求，来源: {request.headers.get('Origin', '未知')}")
+    
+    # 检查是否有文件上传
+    if 'file' not in request.files:
+        response = jsonify({'error': '未找到文件'})
+        origin = request.headers.get('Origin')
+        if origin in ALLOWED_ORIGINS:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+        return response, 400
+    
+    file = request.files['file']
+    
+    # 检查文件名
+    if file.filename == '':
+        response = jsonify({'error': '没有选择文件'})
+        origin = request.headers.get('Origin')
+        if origin in ALLOWED_ORIGINS:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+        return response, 400
+    
+    # 处理文件上传逻辑
+    try:
+        # 这里可以添加实际的文件处理逻辑
+        # 例如，保存文件到服务器或返回文件内容
+        
+        # 返回成功响应
+        response = jsonify({
+            'status': 'success',
+            'message': '文件上传成功',
+            'filename': file.filename
+        })
+        
+        # 手动添加 CORS 头部
+        origin = request.headers.get('Origin')
+        if origin in ALLOWED_ORIGINS:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+        
+        return response
+    except Exception as e:
+        print(f"[ERROR] 文件上传失败: {str(e)}")
+        error_response = jsonify({'error': f'文件上传失败: {str(e)}'})
+        
+        # 即使发生错误也要添加 CORS 头部
+        origin = request.headers.get('Origin')
+        if origin in ALLOWED_ORIGINS:
+            error_response.headers['Access-Control-Allow-Origin'] = origin
+            error_response.headers['Access-Control-Allow-Credentials'] = 'true'
+        
+        return error_response, 500
 
 if __name__ == '__main__':
     # 注意：确保在生产环境中使用Gunicorn或类似的WSGI服务器
